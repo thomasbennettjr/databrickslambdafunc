@@ -1,5 +1,10 @@
 package com.amazonaws.lambda.demo;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -7,18 +12,20 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.S3Event;
 import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.event.S3EventNotification.S3EventNotificationRecord;
 import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
-import com.metaopsis.icsapi.helper.*;
-import com.metaopsis.icsapi.impl.InformaticaCloudException;
-import com.metaopsis.icsapi.impl.InformaticaCloudImpl;
+import com.talend.databricks.dbfs.DBFS;
+import com.talend.databricks.dbfs.DBFSException;
+import com.talend.databricks.dbfs.Response;
+
 
 public class LambdaFunctionHandler implements RequestHandler<S3Event, String> {
 
     private AmazonS3 s3 = AmazonS3ClientBuilder.standard().build();
-
+    private DBFS dbfs = null;
     public LambdaFunctionHandler() {}
 
     // Test purpose only.
@@ -28,52 +35,64 @@ public class LambdaFunctionHandler implements RequestHandler<S3Event, String> {
 
     @Override
     public String handleRequest(S3Event event, Context context) {
+        if (dbfs == null)
+            this.dbfs = DBFS.getInstance(System.getenv("DB_REGION"), System.getenv("DB_TOKEN"));
+        String path = System.getenv("DB_PATH");
         context.getLogger().log("Received event: " + event);
         List<S3EventNotificationRecord>  records = event.getRecords();
+        try {
+            dbfs.mkdirs(path);
+        } catch (DBFSException e) {
+            context.getLogger().log(e.getMessage());
+        }
+        ArrayList<String> paths = new ArrayList<String>();
         for (S3EventNotificationRecord record : records)
         {
-        		String filename = record.getS3().getObject().getKey();
-        		context.getLogger().log("FileName : " + filename);
-        		if (record.getS3().getObject().getSizeAsLong() > 0)
-        		{
-        			InformaticaCloudImpl impl = new InformaticaCloudImpl();
-        			try {
-						User user = impl.login(new Login("tbennett@unicosolution.app.com","Lak3v13w.c0m"));
-						String jobname = "mct_aws_s3_" + UUID.randomUUID().toString();
-						String mct = "{\"@type\": \"mtTask\",\"orgId\": \"0018IZ\",\"name\": \""+ jobname + "\",\"description\": \"\",\"runtimeEnvironmentId\": \"0018IZ2500000000001X\",\"mappingId\": \"0018IZ170000000000GL\",\"parameters\": [{\"@type\": \"mtTaskParameter\",\"name\": \"$NewSource$\",\"type\": \"EXTENDED_SOURCE\",\"label\": \"NewSource\",\"sourceConnectionId\": \"0018IZ0B0000000000G1\",\"extendedObject\": {\"@type\": \"extendedObject\",\"object\": {\"@type\": \"mObject\",\"name\": \""+ filename + "\",\"label\": \"" + filename + "\"}}}]}";
-						impl.createMappingConfigurationTask(user, mct);
-						Job job = new Job();
-						job.setTaskName(jobname);
-						job.setTaskType("MTT");
-						job.setCallbackURL("https://3gz3b7fhek.execute-api.us-east-1.amazonaws.com/alpha");
-						Job response = impl.job(user, job, true);
-						
-						context.getLogger().log(response.toString());
-        			
-        			} catch (InformaticaCloudException e) {
-						// TODO Auto-generated catch block
-						context.getLogger().log(e.getMessage());
-					}
-        		}
-        		
+            S3Object fullObject = null;
+            String filename = record.getS3().getObject().getKey();
+            AmazonS3 client = new AmazonS3Client();
+            S3Object object = client.getObject(new GetObjectRequest(record.getS3().getBucket().getName(),filename));
+
+            context.getLogger().log("FileName : " + filename);
+            String xpath = path+"/"+filename;
+
+            try {
+                if (!paths.contains(xpath)) {
+                    context.getLogger().log("Creating Path " + xpath);
+                    int handle = dbfs.create(path + "/" + filename);
+                    context.getLogger().log("Handle: " + handle);
+                    processFile(object.getObjectContent(), context, handle);
+                    dbfs.close(handle);
+                    context.getLogger().log("Closing Handle: " + handle);
+                } else {
+                    context.getLogger().log(xpath + " already exists!");
+                }
+            } catch(DBFSException e)
+            {
+                context.getLogger().log(e.getMessage());
+            }
         }
         
         
         return null;
-        // Get the object from the event and show its content type
-        /*String bucket = event.getRecords().get(0).getS3().getBucket().getName();
-        String key = event.getRecords().get(0).getS3().getObject().getKey();
+    }
+
+
+    private void processFile(InputStream input, Context context, int handle) {
+        // Read the text input stream one line at a time and display each line.
         try {
-            S3Object response = s3.getObject(new GetObjectRequest(bucket, key));
-            String contentType = response.getObjectMetadata().getContentType();
-            context.getLogger().log("CONTENT TYPE: " + contentType);
-            return contentType;
-        } catch (Exception e) {
-            e.printStackTrace();
-            context.getLogger().log(String.format(
-                "Error getting object %s from bucket %s. Make sure they exist and"
-                + " your bucket is in the same region as this function.", key, bucket));
-            throw e;
-        } */
+            BufferedReader reader = new BufferedReader(new InputStreamReader(input));
+            String line = null;
+            //int chunkSize = 1048576; // 1MB but coding below will not break multibyte characters
+            StringBuilder buff = new StringBuilder();
+            while ((line = reader.readLine()) != null) {
+                buff.append(line + "\n");
+            }
+
+            dbfs.addBlock(handle, buff.toString().getBytes("UTF-8"));
+        } catch(DBFSException | IOException e)
+        {
+            context.getLogger().log(e.getLocalizedMessage());
+        }
     }
 }

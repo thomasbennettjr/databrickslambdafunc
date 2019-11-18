@@ -71,10 +71,7 @@
       <scope>test</scope>
     </dependency>
 
-    <dependency>
-      <groupId>com.amazonaws</groupId>
-      <artifactId>aws-java-sdk-s3</artifactId>
-    </dependency>
+
     <dependency>
       <groupId>com.amazonaws</groupId>
       <artifactId>aws-lambda-java-events</artifactId>
@@ -86,9 +83,24 @@
       <version>1.1.0</version>
     </dependency>
     <dependency>
-            <groupId>com.metaopsis</groupId>
-            <artifactId>icsapi</artifactId>
-            <version>26.1.0</version>
-        </dependency>
+      <groupId>com.talend</groupId>
+      <artifactId>databricks-dbfs-api</artifactId>
+      <version>2.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-core</artifactId>
+      <version>2.9.9</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-annotations</artifactId>
+      <version>2.9.9</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.9.9</version>
+    </dependency>
   </dependencies>
 </project>
